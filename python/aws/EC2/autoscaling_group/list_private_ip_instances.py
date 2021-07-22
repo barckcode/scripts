@@ -29,7 +29,7 @@ def list_ip(profile, region, autoscaling_name):
     print('--> Loading the IPs of the servers...')
 
     if not e:
-        output_file = '/Users/cristianandrescordovavalencia/Desktop/Programming/Projects/scripts/python/aws/EC2/autoscaling_group/list_instances_' + autoscaling_name
+        output_file = '/home/ubuntu/list_instances_' + autoscaling_name
         print('--> Saving the IPs in ' + output_file)
         print('Output: ' + o.decode('ascii'))
         print('code: ' + str(proc.returncode))
