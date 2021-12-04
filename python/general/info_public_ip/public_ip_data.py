@@ -1,4 +1,4 @@
-import requests, json
+import requests
 
 def main():
     try:
