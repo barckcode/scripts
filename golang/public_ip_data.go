@@ -33,4 +33,5 @@ func main() {
 
 	// Print the output
 	fmt.Printf("IP: %s - Pais: %s - Region: %s - Ciudad %s", response.Ip, response.Country, response.Region_name, response.City)
+	fmt.Println(" ")
 }
