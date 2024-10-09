@@ -13,8 +13,8 @@ show_usage() {
     echo "  -k, --key <public_key>   SSH public key (in quotes)"
     echo
     echo "Examples:"
-    echo "  Create user: $0 -c -n \"Gandalf the Grey\" -u ggrey -p \"1Temp0r@l\" -k \"ssh-rsa AAAA...\""
-    echo "  Delete user: $0 -d -u ggrey"
+    echo "  Create user: sudo $0 -c -n \"Gandalf the Grey\" -u ggrey -p \"1Temp0r@l\" -k \"ssh-rsa AAAA...\""
+    echo "  Delete user: sudo $0 -d -u ggrey"
 }
 
 # Function to create a user
