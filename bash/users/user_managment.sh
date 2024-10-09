@@ -1,4 +1,6 @@
 #!/bin/bash
+# Description: This script is used to manage users in the system and AWS.
+# Author: @barckcode (https://github.com/barckcode)
 
 # Function to display script usage
 show_usage() {
@@ -8,16 +10,16 @@ show_usage() {
     echo "  -c, --create             Create a new user (requires -n, -u, -p, -k)"
     echo "  -d, --delete             Delete an existing user (requires -u)"
     echo "  -n, --name <name>        Full name of the user (in quotes)"
-    echo "  -u, --username <user>    Username for the system"
+    echo "  -u, --username <user>    Username for the system and AWS"
     echo "  -p, --password <pass>    Temporary password for the user"
     echo "  -k, --key <public_key>   SSH public key (in quotes)"
     echo
     echo "Examples:"
-    echo "  Create user: sudo $0 -c -n \"Gandalf the Grey\" -u ggrey -p \"1Temp0r@l\" -k \"ssh-rsa AAAA...\""
-    echo "  Delete user: sudo $0 -d -u ggrey"
+    echo "  Create user: $0 -c -n \"Gandalf the Grey\" -u ggrey -p \"1Temp0r@l\" -k \"ssh-rsa AAAA...\""
+    echo "  Delete user: $0 -d -u ggrey"
 }
 
-# Function to create a user
+# Function to create a user in the system and AWS
 create_user() {
     # Check if all required arguments are provided
     if [ -z "$FULL_NAME" ] || [ -z "$USERNAME" ] || [ -z "$PASSWORD" ] || [ -z "$SSH_KEY" ]; then
@@ -26,16 +28,16 @@ create_user() {
         exit 1
     fi
 
-    # Create the user
+    # Create the system user
     if ! useradd -m -c "$FULL_NAME" -s /bin/bash "$USERNAME"; then
-        echo "Error: Could not create user $USERNAME"
+        echo "Error: Could not create system user $USERNAME"
         exit 1
     fi
 
-    # Set the password
+    # Set the system password
     echo "$USERNAME:$PASSWORD" | chpasswd
     if [ $? -ne 0 ]; then
-        echo "Error: Could not set password for $USERNAME"
+        echo "Error: Could not set system password for $USERNAME"
         exit 1
     fi
 
@@ -52,10 +54,25 @@ create_user() {
     echo "$USERNAME ALL=(ALL) NOPASSWD: /bin/su ubuntu, /bin/su - ubuntu" > /etc/sudoers.d/$USERNAME
     chmod 0440 /etc/sudoers.d/$USERNAME
 
-    echo "User $USERNAME successfully created with SSH access and permissions to switch to ubuntu user."
+    # Create AWS user
+    if ! aws iam create-user --user-name "$USERNAME"; then
+        echo "Error: Could not create AWS user $USERNAME"
+        exit 1
+    fi
+
+    # Create AWS login profile with temporary password
+    if ! aws iam create-login-profile --user-name "$USERNAME" --password "$PASSWORD" --password-reset-required; then
+        echo "Error: Could not create AWS login profile for $USERNAME"
+        exit 1
+    fi
+
+    # Attach policy to allow user to change their own password
+    aws iam attach-user-policy --user-name "$USERNAME" --policy-arn arn:aws:iam::aws:policy/IAMUserChangePassword
+
+    echo "User $USERNAME successfully created in system and AWS with SSH access and permissions to switch to ubuntu user."
 }
 
-# Function to delete a user
+# Function to delete a user from the system and AWS
 delete_user() {
     # Check if username is provided
     if [ -z "$USERNAME" ]; then
@@ -64,24 +81,42 @@ delete_user() {
         exit 1
     fi
 
-    # Check if the user exists
-    if ! id "$USERNAME" &>/dev/null; then
-        echo "Error: User $USERNAME does not exist."
-        exit 1
+    # Check if the system user exists
+    if id "$USERNAME" &>/dev/null; then
+        # Delete the system user and their home directory
+        if ! userdel -r "$USERNAME"; then
+            echo "Error: Could not delete system user $USERNAME"
+            exit 1
+        fi
+
+        # Remove the user's sudoers file if it exists
+        if [ -f "/etc/sudoers.d/$USERNAME" ]; then
+            rm "/etc/sudoers.d/$USERNAME"
+        fi
+    else
+        echo "Warning: System user $USERNAME does not exist."
     fi
 
-    # Delete the user and their home directory
-    if ! userdel -r "$USERNAME"; then
-        echo "Error: Could not delete user $USERNAME"
-        exit 1
+    # Check if the AWS user exists
+    if aws iam get-user --user-name "$USERNAME" &>/dev/null; then
+        # Delete login profile
+        aws iam delete-login-profile --user-name "$USERNAME"
+
+        # Detach all policies from the user
+        for policy in $(aws iam list-attached-user-policies --user-name "$USERNAME" --query 'AttachedPolicies[*].PolicyArn' --output text); do
+            aws iam detach-user-policy --user-name "$USERNAME" --policy-arn "$policy"
+        done
+
+        # Delete the AWS user
+        if ! aws iam delete-user --user-name "$USERNAME"; then
+            echo "Error: Could not delete AWS user $USERNAME"
+            exit 1
+        fi
+    else
+        echo "Warning: AWS user $USERNAME does not exist."
     fi
 
-    # Remove the user's sudoers file if it exists
-    if [ -f "/etc/sudoers.d/$USERNAME" ]; then
-        rm "/etc/sudoers.d/$USERNAME"
-    fi
-
-    echo "User $USERNAME successfully deleted."
+    echo "User $USERNAME successfully deleted from system and AWS."
 }
 
 # Initialize variables
