@@ -10,16 +10,62 @@ show_usage() {
     echo "  -c, --create             Create a new user (requires -n, -u, -p, -k)"
     echo "  -d, --delete             Delete an existing user (requires -u)"
     echo "  -n, --name <name>        Full name of the user (in quotes)"
-    echo "  -u, --username <user>    Username for the system and AWS"
+    echo "  -u, --username <user>    Username for the system, AWS, and MongoDB"
     echo "  -p, --password <pass>    Temporary password for the user"
     echo "  -k, --key <public_key>   SSH public key (in quotes)"
+    echo "  -m, --mongo <env>        MongoDB environments to create user (dev, pro, both). Default: both"
     echo
     echo "Examples:"
-    echo "  Create user: $0 -c -n \"Gandalf the Grey\" -u ggrey -p \"1Temp0r@l\" -k \"ssh-rsa AAAA...\""
+    echo "  Create user: $0 -c -n \"Gandalf the Grey\" -u ggrey -p \"1Temp0r@l\" -k \"ssh-rsa AAAA...\" -m dev"
     echo "  Delete user: $0 -d -u ggrey"
 }
 
-# Function to create a user in the system and AWS
+# Function to read MongoDB configuration
+read_mongo_config() {
+    if [ ! -f "mongo.config" ]; then
+        echo "Error: mongo.config file not found"
+        exit 1
+    fi
+    source mongo.config
+}
+
+# Function to create MongoDB user with admin privileges
+create_mongo_user() {
+    local host=$1
+    local admin_user=$2
+    local admin_password=$3
+    local new_user=$4
+    local new_password=$5
+
+    mongo --host "$host" --username "$admin_user" --password "$admin_password" --authenticationDatabase admin <<EOF
+use admin
+db.createUser({
+  user: "$new_user",
+  pwd: "$new_password",
+  roles: [
+    { role: "userAdminAnyDatabase", db: "admin" },
+    { role: "readWriteAnyDatabase", db: "admin" },
+    { role: "dbAdminAnyDatabase", db: "admin" },
+    { role: "clusterAdmin", db: "admin" }
+  ]
+})
+EOF
+}
+
+# Function to delete MongoDB user
+delete_mongo_user() {
+    local host=$1
+    local admin_user=$2
+    local admin_password=$3
+    local delete_user=$4
+
+    mongo --host "$host" --username "$admin_user" --password "$admin_password" --authenticationDatabase admin <<EOF
+use admin
+db.dropUser("$delete_user")
+EOF
+}
+
+# Function to create a user in the system, AWS, and MongoDB
 create_user() {
     # Check if all required arguments are provided
     if [ -z "$FULL_NAME" ] || [ -z "$USERNAME" ] || [ -z "$PASSWORD" ] || [ -z "$SSH_KEY" ]; then
@@ -75,10 +121,21 @@ create_user() {
         exit 1
     fi
 
-    echo "User $USERNAME successfully created in system and AWS with SSH access, added to admins group, and permissions to switch to ubuntu user."
+    # Create MongoDB users with admin privileges
+    read_mongo_config
+    if [ "$MONGO_ENV" = "dev" ] || [ "$MONGO_ENV" = "both" ]; then
+        create_mongo_user "$MONGO_HOST_DEV" "$MONGO_USER_DEV" "$MONGO_PASSWORD_DEV" "$USERNAME" "$PASSWORD"
+        echo "MongoDB admin user created in dev environment"
+    fi
+    if [ "$MONGO_ENV" = "pro" ] || [ "$MONGO_ENV" = "both" ]; then
+        create_mongo_user "$MONGO_HOST_PRO" "$MONGO_USER_PRO" "$MONGO_PASSWORD_PRO" "$USERNAME" "$PASSWORD"
+        echo "MongoDB admin user created in pro environment"
+    fi
+
+    echo "User $USERNAME successfully created with admin privileges in system, AWS, and specified MongoDB environments."
 }
 
-# Function to delete a user from the system and AWS
+# Function to delete a user from the system, AWS, and MongoDB
 delete_user() {
     # Check if username is provided
     if [ -z "$USERNAME" ]; then
@@ -125,7 +182,12 @@ delete_user() {
         echo "Warning: AWS user $USERNAME does not exist."
     fi
 
-    echo "User $USERNAME successfully deleted from system and AWS."
+    # Delete MongoDB users
+    read_mongo_config
+    delete_mongo_user "$MONGO_HOST_DEV" "$MONGO_USER_DEV" "$MONGO_PASSWORD_DEV" "$USERNAME"
+    delete_mongo_user "$MONGO_HOST_PRO" "$MONGO_USER_PRO" "$MONGO_PASSWORD_PRO" "$USERNAME"
+
+    echo "User $USERNAME successfully deleted from system, AWS, and MongoDB environments."
 }
 
 # Initialize variables
@@ -134,6 +196,7 @@ USERNAME=""
 PASSWORD=""
 SSH_KEY=""
 ACTION=""
+MONGO_ENV="both"
 
 # Process command line arguments
 while [[ $# -gt 0 ]]; do
@@ -164,6 +227,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -k|--key)
             SSH_KEY="$2"
+            shift 2
+            ;;
+        -m|--mongo)
+            MONGO_ENV="$2"
             shift 2
             ;;
         *)
