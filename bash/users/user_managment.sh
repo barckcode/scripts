@@ -69,7 +69,13 @@ create_user() {
     # Attach policy to allow user to change their own password
     aws iam attach-user-policy --user-name "$USERNAME" --policy-arn arn:aws:iam::aws:policy/IAMUserChangePassword
 
-    echo "User $USERNAME successfully created in system and AWS with SSH access and permissions to switch to ubuntu user."
+    # Add user to the admins group
+    if ! aws iam add-user-to-group --user-name "$USERNAME" --group-name admins; then
+        echo "Error: Could not add user $USERNAME to admins group"
+        exit 1
+    fi
+
+    echo "User $USERNAME successfully created in system and AWS with SSH access, added to admins group, and permissions to switch to ubuntu user."
 }
 
 # Function to delete a user from the system and AWS
@@ -99,6 +105,9 @@ delete_user() {
 
     # Check if the AWS user exists
     if aws iam get-user --user-name "$USERNAME" &>/dev/null; then
+        # Remove user from admins group
+        aws iam remove-user-from-group --user-name "$USERNAME" --group-name admins
+
         # Delete login profile
         aws iam delete-login-profile --user-name "$USERNAME"
 
