@@ -26,7 +26,7 @@ read_mongo_config() {
         echo "Error: mongo.config file not found"
         exit 1
     fi
-    source mongo.config
+    source ~/scripts/mongo.config
 }
 
 # Function to create MongoDB user with admin privileges
@@ -37,7 +37,7 @@ create_mongo_user() {
     local new_user=$4
     local new_password=$5
 
-    mongo --host "$host" --username "$admin_user" --password "$admin_password" --authenticationDatabase admin <<EOF
+    if ! mongosh --host "$host" --username "$admin_user" --password "$admin_password" --authenticationDatabase admin <<EOF
 use admin
 db.createUser({
   user: "$new_user",
@@ -50,6 +50,10 @@ db.createUser({
   ]
 })
 EOF
+    then
+        echo "Error: Failed to create MongoDB user $new_user"
+        return 1
+    fi
 }
 
 # Function to delete MongoDB user
@@ -59,10 +63,14 @@ delete_mongo_user() {
     local admin_password=$3
     local delete_user=$4
 
-    mongo --host "$host" --username "$admin_user" --password "$admin_password" --authenticationDatabase admin <<EOF
+    if ! mongosh --host "$host" --username "$admin_user" --password "$admin_password" --authenticationDatabase admin <<EOF
 use admin
 db.dropUser("$delete_user")
 EOF
+    then
+        echo "Error: Failed to delete MongoDB user $delete_user"
+        return 1
+    fi
 }
 
 # Function to create a user in the system, AWS, and MongoDB
