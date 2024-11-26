@@ -13,7 +13,7 @@ show_usage() {
     echo "  -u, --username <user>    Username for the system, AWS, and MongoDB"
     echo "  -p, --password <pass>    Temporary password for the user"
     echo "  -k, --key <public_key>   SSH public key (in quotes)"
-    echo "  -m, --mongo <env>        MongoDB environments to create user (dev, pro, both). Default: both"
+    echo "  -m, --mongo <env>        MongoDB environments to create user (dev, pre, pro, both). Default: both"
     echo
     echo "Examples:"
     echo "  Create user: $0 -c -n \"Gandalf the Grey\" -u ggrey -p \"1Temp0r@l\" -k \"ssh-rsa AAAA...\" -m dev"
@@ -135,6 +135,10 @@ create_user() {
         create_mongo_user "$MONGO_HOST_DEV" "$MONGO_USER_DEV" "$MONGO_PASSWORD_DEV" "$USERNAME" "$PASSWORD"
         echo "MongoDB admin user created in dev environment"
     fi
+    if [ "$MONGO_ENV" = "pre" ] || [ "$MONGO_ENV" = "both" ]; then
+        create_mongo_user "$MONGO_HOST_PRE" "$MONGO_USER_PRE" "$MONGO_PASSWORD_PRE" "$USERNAME" "$PASSWORD"
+        echo "MongoDB admin user created in pre environment"
+    fi
     if [ "$MONGO_ENV" = "pro" ] || [ "$MONGO_ENV" = "both" ]; then
         create_mongo_user "$MONGO_HOST_PRO" "$MONGO_USER_PRO" "$MONGO_PASSWORD_PRO" "$USERNAME" "$PASSWORD"
         echo "MongoDB admin user created in pro environment"
@@ -193,6 +197,7 @@ delete_user() {
     # Delete MongoDB users
     read_mongo_config
     delete_mongo_user "$MONGO_HOST_DEV" "$MONGO_USER_DEV" "$MONGO_PASSWORD_DEV" "$USERNAME"
+    delete_mongo_user "$MONGO_HOST_PRE" "$MONGO_USER_PRE" "$MONGO_PASSWORD_PRE" "$USERNAME"
     delete_mongo_user "$MONGO_HOST_PRO" "$MONGO_USER_PRO" "$MONGO_PASSWORD_PRO" "$USERNAME"
 
     echo "User $USERNAME successfully deleted from system, AWS, and MongoDB environments."
