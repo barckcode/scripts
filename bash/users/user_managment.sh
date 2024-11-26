@@ -204,6 +204,7 @@ delete_user() {
     fi
     if [ "$MONGO_ENV" = "pro" ] || [ "$MONGO_ENV" = "both" ]; then
         delete_mongo_user "$MONGO_HOST_PRO" "$MONGO_USER_PRO" "$MONGO_PASSWORD_PRO" "$USERNAME"
+    fi
 
     echo "User $USERNAME successfully deleted from system, AWS, and MongoDB environments."
 }
