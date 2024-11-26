@@ -196,9 +196,14 @@ delete_user() {
 
     # Delete MongoDB users
     read_mongo_config
-    delete_mongo_user "$MONGO_HOST_DEV" "$MONGO_USER_DEV" "$MONGO_PASSWORD_DEV" "$USERNAME"
-    delete_mongo_user "$MONGO_HOST_PRE" "$MONGO_USER_PRE" "$MONGO_PASSWORD_PRE" "$USERNAME"
-    delete_mongo_user "$MONGO_HOST_PRO" "$MONGO_USER_PRO" "$MONGO_PASSWORD_PRO" "$USERNAME"
+    if [ "$MONGO_ENV" = "dev" ] || [ "$MONGO_ENV" = "both" ]; then
+        delete_mongo_user "$MONGO_HOST_DEV" "$MONGO_USER_DEV" "$MONGO_PASSWORD_DEV" "$USERNAME"
+    fi
+    if [ "$MONGO_ENV" = "pre" ] || [ "$MONGO_ENV" = "both" ]; then
+        delete_mongo_user "$MONGO_HOST_PRE" "$MONGO_USER_PRE" "$MONGO_PASSWORD_PRE" "$USERNAME"
+    fi
+    if [ "$MONGO_ENV" = "pro" ] || [ "$MONGO_ENV" = "both" ]; then
+        delete_mongo_user "$MONGO_HOST_PRO" "$MONGO_USER_PRO" "$MONGO_PASSWORD_PRO" "$USERNAME"
 
     echo "User $USERNAME successfully deleted from system, AWS, and MongoDB environments."
 }
