@@ -73,6 +73,75 @@ EOF
     fi
 }
 
+# Function to create system user if it doesn't exist
+create_system_user() {
+    if id "$USERNAME" &>/dev/null; then
+        echo "Warning: System user $USERNAME already exists, skipping system user creation"
+        return 0
+    fi
+
+    # Create the system user
+    if ! useradd -m -c "$FULL_NAME" -s /bin/bash "$USERNAME"; then
+        echo "Error: Could not create system user $USERNAME"
+        return 1
+    fi
+
+    # Set the system password
+    echo "$USERNAME:$PASSWORD" | chpasswd
+    if [ $? -ne 0 ]; then
+        echo "Error: Could not set system password for $USERNAME"
+        return 1
+    fi
+
+    # Create .ssh directory and authorized_keys file
+    su - "$USERNAME" -c "mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+
+    # Add the SSH public key
+    if ! echo "$SSH_KEY" >> /home/$USERNAME/.ssh/authorized_keys; then
+        echo "Error: Could not add SSH public key for $USERNAME"
+        return 1
+    fi
+
+    # Give permissions to switch to ubuntu user
+    echo "$USERNAME ALL=(ALL) NOPASSWD: /bin/su ubuntu, /bin/su - ubuntu" > /etc/sudoers.d/$USERNAME
+    chmod 0440 /etc/sudoers.d/$USERNAME
+
+    echo "System user $USERNAME successfully created"
+    return 0
+}
+
+# Function to create AWS user if it doesn't exist
+create_aws_user() {
+    # Check if AWS user already exists
+    if aws iam get-user --user-name "$USERNAME" &>/dev/null; then
+        echo "Warning: AWS user $USERNAME already exists, skipping AWS user creation"
+        return 0
+    fi
+
+    # Create AWS user
+    if ! aws iam create-user --user-name "$USERNAME"; then
+        echo "Error: Could not create AWS user $USERNAME"
+        return 1
+    fi
+
+    # Create AWS login profile with temporary password
+    if ! aws iam create-login-profile --user-name "$USERNAME" --password "$PASSWORD" --password-reset-required; then
+        echo "Error: Could not create AWS login profile for $USERNAME"
+        return 1
+    fi
+
+    # Attach policy to allow user to change their own password
+    aws iam attach-user-policy --user-name "$USERNAME" --policy-arn arn:aws:iam::aws:policy/IAMUserChangePassword
+
+    # Add user to the admins group
+    if ! aws iam add-user-to-group --user-name "$USERNAME" --group-name admins; then
+        echo "Error: Could not add user $USERNAME to admins group"
+        return 1
+    fi
+
+    echo "AWS user $USERNAME successfully created"
+    return 0
+}
 # Function to create a user in the system, AWS, and MongoDB
 create_user() {
     # Check if all required arguments are provided
@@ -82,69 +151,34 @@ create_user() {
         exit 1
     fi
 
-    # Create the system user
-    if ! useradd -m -c "$FULL_NAME" -s /bin/bash "$USERNAME"; then
-        echo "Error: Could not create system user $USERNAME"
-        exit 1
-    fi
+    # Create system user (if it doesn't exist)
+    create_system_user
+    local system_status=$?
 
-    # Set the system password
-    echo "$USERNAME:$PASSWORD" | chpasswd
-    if [ $? -ne 0 ]; then
-        echo "Error: Could not set system password for $USERNAME"
-        exit 1
-    fi
-
-    # Create .ssh directory and authorized_keys file
-    su - "$USERNAME" -c "mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
-
-    # Add the SSH public key
-    if ! echo "$SSH_KEY" >> /home/$USERNAME/.ssh/authorized_keys; then
-        echo "Error: Could not add SSH public key for $USERNAME"
-        exit 1
-    fi
-
-    # Give permissions to switch to ubuntu user
-    echo "$USERNAME ALL=(ALL) NOPASSWD: /bin/su ubuntu, /bin/su - ubuntu" > /etc/sudoers.d/$USERNAME
-    chmod 0440 /etc/sudoers.d/$USERNAME
-
-    # Create AWS user
-    if ! aws iam create-user --user-name "$USERNAME"; then
-        echo "Error: Could not create AWS user $USERNAME"
-        exit 1
-    fi
-
-    # Create AWS login profile with temporary password
-    if ! aws iam create-login-profile --user-name "$USERNAME" --password "$PASSWORD" --password-reset-required; then
-        echo "Error: Could not create AWS login profile for $USERNAME"
-        exit 1
-    fi
-
-    # Attach policy to allow user to change their own password
-    aws iam attach-user-policy --user-name "$USERNAME" --policy-arn arn:aws:iam::aws:policy/IAMUserChangePassword
-
-    # Add user to the admins group
-    if ! aws iam add-user-to-group --user-name "$USERNAME" --group-name admins; then
-        echo "Error: Could not add user $USERNAME to admins group"
-        exit 1
-    fi
+    # Create AWS user (if it doesn't exist)
+    create_aws_user
+    local aws_status=$?
 
     # Create MongoDB users with admin privileges
     read_mongo_config
+    local mongo_status=0
+
     if [ "$MONGO_ENV" = "dev" ] || [ "$MONGO_ENV" = "both" ]; then
         create_mongo_user "$MONGO_HOST_DEV" "$MONGO_USER_DEV" "$MONGO_PASSWORD_DEV" "$USERNAME" "$PASSWORD"
-        echo "MongoDB admin user created in dev environment"
+        [ $? -eq 0 ] && echo "MongoDB admin user created in dev environment"
     fi
     if [ "$MONGO_ENV" = "pre" ] || [ "$MONGO_ENV" = "both" ]; then
         create_mongo_user "$MONGO_HOST_PRE" "$MONGO_USER_PRE" "$MONGO_PASSWORD_PRE" "$USERNAME" "$PASSWORD"
-        echo "MongoDB admin user created in pre environment"
+        [ $? -eq 0 ] && echo "MongoDB admin user created in pre environment"
     fi
     if [ "$MONGO_ENV" = "pro" ] || [ "$MONGO_ENV" = "both" ]; then
         create_mongo_user "$MONGO_HOST_PRO" "$MONGO_USER_PRO" "$MONGO_PASSWORD_PRO" "$USERNAME" "$PASSWORD"
-        echo "MongoDB admin user created in pro environment"
+        [ $? -eq 0 ] && echo "MongoDB admin user created in pro environment"
     fi
 
-    echo "User $USERNAME successfully created with admin privileges in system, AWS, and specified MongoDB environments."
+    echo "User creation process completed with following status:"
+    echo "System user: $([[ $system_status -eq 0 ]] && echo "Success" || echo "Failed")"
+    echo "AWS user: $([[ $aws_status -eq 0 ]] && echo "Success" || echo "Failed")"
 }
 
 # Function to delete a user from the system, AWS, and MongoDB
